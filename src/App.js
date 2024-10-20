@@ -10,51 +10,71 @@ const DtoGenerator = () => {
 
     try {
       const jsonObject = JSON.parse(jsonInput);
-      const dtoClass = generateDtoClass(jsonObject);
+      const dtoClass = generateDtoClass(jsonObject, 'GeneratedDto');
       setGeneratedDto(dtoClass);
     } catch (error) {
       setGeneratedDto('Invalid JSON');
     }
   };
 
-  const generateDtoClass = (jsonObject) => {
-    const dtoName = 'GeneratedDto'; // You can modify this to get from input if needed
+  const generateDtoClass = (jsonObject, className) => {
     let classString = '';
-
     if (language === 'java') {
-      classString += `public class ${dtoName} {\n`;
-      for (const [key, value] of Object.entries(jsonObject)) {
-        const type = getJavaType(value);
-        classString += `    private ${type} ${key};\n`;
-      }
-      classString += '\n    // Getters and Setters\n';
-      classString += '}';
+      classString += `public class ${className} {\n`;
     } else {
-      // For Kotlin
-      classString += `data class ${dtoName} (\n`;
-      for (const [key, value] of Object.entries(jsonObject)) {
-        const type = getKotlinType(value);
-        classString += `    val ${key}: ${type},\n`;
-      }
-      classString = classString.slice(0, -2) + '\n)'; // Remove last comma and add closing parenthesis
+      classString += `data class ${className} (\n`;
     }
 
-    return classString;
+    let innerClasses = '';
+
+    for (const [key, value] of Object.entries(jsonObject)) {
+      const fieldName = key;
+      if (typeof value === 'object' && !Array.isArray(value)) {
+        // Nested object - create a new class
+        const nestedClassName = capitalizeFirstLetter(fieldName);
+        classString += `    private ${nestedClassName} ${fieldName};\n`;
+        innerClasses += generateDtoClass(value, nestedClassName);
+      } else if (Array.isArray(value)) {
+        // Handling array
+        if (typeof value[0] === 'object') {
+          // Array of objects, generate class for array items
+          const arrayClassName = capitalizeFirstLetter(fieldName.slice(0, -1)); // Singular form for class name
+          classString += `    private List<${arrayClassName}> ${fieldName};\n`;
+          innerClasses += generateDtoClass(value[0], arrayClassName); // Generate class for array items
+        } else {
+          const itemType = value.length > 0 ? getJavaType(value[0]) : 'Object';
+          classString += `    private List<${itemType}> ${fieldName};\n`;
+        }
+      } else {
+        // Simple field
+        const type = language === 'java' ? getJavaType(value) : getKotlinType(value);
+        classString += `    private ${type} ${fieldName};\n`;
+      }
+    }
+
+    if (language === 'java') {
+      classString += '\n    // Getters and Setters\n';
+      classString += '}\n\n';
+    } else {
+      classString = classString.slice(0, -2) + '\n)\n\n'; // For Kotlin, remove last comma and add closing parenthesis
+    }
+
+    return classString + innerClasses;
   };
 
   const getJavaType = (value) => {
     if (Array.isArray(value)) {
-      return 'List<Object>'; // You may want to handle arrays of specific types
+      return 'List<Object>';
     }
     switch (typeof value) {
       case 'string':
         return 'String';
       case 'number':
-        return 'int'; // Use 'double' or 'float' for decimal values
+        return 'double'; // Use 'double' for decimals
       case 'boolean':
         return 'boolean';
       case 'object':
-        return 'Object'; // Handle nested objects if needed
+        return 'Object';
       default:
         return 'Object';
     }
@@ -62,20 +82,24 @@ const DtoGenerator = () => {
 
   const getKotlinType = (value) => {
     if (Array.isArray(value)) {
-      return 'List<Any>'; // You may want to handle arrays of specific types
+      return 'List<Any>';
     }
     switch (typeof value) {
       case 'string':
         return 'String';
       case 'number':
-        return 'Int'; // Use 'Double' for decimal values
+        return 'Double'; // Kotlin uses capitalized types
       case 'boolean':
         return 'Boolean';
       case 'object':
-        return 'Any'; // Handle nested objects if needed
+        return 'Any';
       default:
         return 'Any';
     }
+  };
+
+  const capitalizeFirstLetter = (string) => {
+    return string.charAt(0).toUpperCase() + string.slice(1);
   };
 
   return (
